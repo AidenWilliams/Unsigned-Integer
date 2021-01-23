@@ -13,8 +13,6 @@ int main() {
 //    !x;
     //y = !x;
 //    x |= y;
-    x = y;
-    std::cout << x.to_string() << std::endl;
 //    std::cout << (x++).to_string() << std::endl;
 //    std::cout << (x).to_string() << std::endl;
 //    std::cout << (--x).to_string() << std::endl;

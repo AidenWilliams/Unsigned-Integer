@@ -264,7 +264,6 @@ public:
         int i = base - 1, j = base2 - 1;
         //msb his larger
         bool safety;
-        //for(;i >= 0 || j >= y.msb - 1;i--,j--){
         for(;i >= 0 && i >= msb - 1;i--,j--){
             if(j >= 0)
                 safety = y.uint[j];
@@ -332,7 +331,6 @@ public:
         return (*this);
     }
 
-
     template<unsigned short base2>
     MyUint& operator/=(const MyUint<base2>& y) {
         if(y == 0) throw std::runtime_error("Math error: Attempted to divide by Zero\n");
@@ -356,6 +354,29 @@ public:
         return *(this);
     }
 
+    template<unsigned short base2>
+    MyUint& operator%=(const MyUint<base2>& y) {
+        if(y == 0) throw std::runtime_error("Math error: Attempted to divide by Zero\n");
+        // Quotient extracted so far
+        MyUint<base> quotient(0);
+        // intermediate remainder
+        MyUint<base> rem(0);
+        for(int i = 0; i < base; i++){
+            rem <<= 1;
+            rem.uint[base-1] = uint[i];
+            for(;rem.msb < base - 1 && !rem.uint[rem.msb];rem.msb++);
+            if(rem >= y){
+                rem -= y;
+                quotient.uint[i] = true;
+                for(;quotient.msb < base - 1 && !quotient.uint[quotient.msb];quotient.msb++);
+            }
+        }
+        msb = 0;
+        for(;msb < base - 1 && !rem.uint[msb];msb++);
+        this->uint = rem.uint;
+        return *(this);
+    }
+
     template<short base2>
     [[nodiscard]] MyUint operator+(const MyUint<base2>& y) const { return MyUint(*this) += y; }
     template<unsigned short base2>
@@ -364,6 +385,8 @@ public:
     [[nodiscard]] MyUint operator*(const MyUint<base2>& y) const { return MyUint(*this) *= y; }
     template<unsigned short base2>
     [[nodiscard]] MyUint operator/(const MyUint<base2>& y) const { return MyUint(*this) /= y; }
+    template<unsigned short base2>
+    [[nodiscard]] MyUint operator%(const MyUint<base2>& y) const { return MyUint(*this) %= y; }
 
     MyUint operator++(int){
         MyUint<base> old(*this);
@@ -419,6 +442,15 @@ public:
     MyUint& operator/=(const unsigned long long x) {
         MyUint<base> y(x);
         *this /= y;
+        return (*this);
+    }
+    [[nodiscard]] MyUint operator%(const unsigned long long x) const {
+        MyUint<base> y(x);
+        return MyUint(*this) %= y;
+    }
+    MyUint& operator%=(const unsigned long long x) {
+        MyUint<base> y(x);
+        *this %= y;
         return (*this);
     }
 
