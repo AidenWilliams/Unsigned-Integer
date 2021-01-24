@@ -15,12 +15,10 @@
 template<unsigned short base>
 class MyUint {
 private:
-    short bits_on(const std::vector<bool>& x){
-        short bits = 0;
-        for(auto y: x){
-            if(y) bits++;
-        }
-        return bits;
+   void verify_msb(){
+        //verify msb
+        msb = 0;
+        for(;msb < base - 1 && !uint[msb];msb++);
     }
 public:
     unsigned short msb = 0;
@@ -38,17 +36,23 @@ public:
         return false;
     }
     explicit MyUint() : uint(std::vector<bool>({false})), msb(0) {};
-    explicit MyUint(std::vector<bool>& vint){
+    explicit MyUint(std::vector<bool> vint){
         std::vector<bool> x(base - vint.size(), false);
         copy(vint.begin(),vint.end(),back_inserter(x));
         uint = x;
-        msb = 0;
-        for(;msb < base - 1 && !uint[msb];msb++);
+        verify_msb();
     };
+    // Copy Constructor
     MyUint(const MyUint & myUint) : uint(myUint.uint), msb(myUint.msb) {};
+    // Move Constructor
+    MyUint(MyUint && myUint)  noexcept : uint{ myUint.uint }, msb{ myUint.msb } {};
+
+    MyUint& operator= (const MyUint & myUint) = default ;
+    MyUint& operator= ( MyUint&& ) noexcept = default ;
+
     explicit MyUint(unsigned long long x) {
         if(!isPowerOf2(base)) throw std::bad_alloc();
-        //static_assert(!isPowerOf2(base), "Base has to be a in the form of 2^n!");
+
         if(x > (unsigned long long)pow(2, base)) throw std::exception();
         //resize vector to base
         uint.resize(base, false);
@@ -68,21 +72,27 @@ public:
         *this =  MyUint<base> (y);
         return (*this);
     }
-
+//    MyUint& operator=(const MyUint<base>& y) {
+//        uint =  y.uint;
+//        msb =  y.msb;
+//        return *this;
+//    }
     /*
      * Bitwise operations
      */
     //Not
-    MyUint& operator~() {
-        for(auto bit: uint){
+    [[nodiscard]]MyUint operator~() {
+        MyUint<base> copy(*this);
+        for(auto bit: copy.uint){
             bit = !bit;
         }
-        return (*this);
+        copy.verify_msb();
+        return copy;
     }
     //And
     template<unsigned short base2>
     MyUint& operator&=(const MyUint<base2>& y) {
-        int i = base - 1, j = base - 1;
+        int i = base - 1, j = base2 - 1;
         //Only loop until i msb or j msb
         // as anything after the msb of either of these is guaranteed to be 0
         for(; i >= msb && j >= y.msb; i--,j--)
@@ -92,25 +102,26 @@ public:
         while(i >= msb)
             uint[i--] = false;
 
+        verify_msb();
         return (*this);
     }
     //Or
     template<unsigned short base2>
     MyUint& operator|=(const MyUint<base2>& y) {
-        int i = base - 1, j = base - 1;
+        int i = base - 1, j = base2 - 1;
         //Only loop until i msb or j msb
         // as anything after the msb of either of these is stays the same
         for(; i >= msb && j >= y.msb; i--,j--)
             uint[i] = uint[i] | y.uint[j];
 
+        verify_msb();
         return (*this);
     }
-
 
     //XOR
     template<unsigned short base2>
     MyUint& operator^=(const MyUint<base2>& y) {
-        int i = base - 1, j = base - 1;
+        int i = base - 1, j = base2 - 1;
         //still loop till msbs
         for(; i >= msb && j >= y.msb; i--,j--)
             uint[i] = uint[i] ^ y.uint[j];
@@ -118,18 +129,26 @@ public:
         for(;i >= msb;i--)
             uint[i] = uint[i] ^ (false);
 
+        verify_msb();
         return (*this);
     }
+
+    template<unsigned short base2>
+    [[nodiscard]] MyUint operator& (const MyUint<base2>& y) const{ return MyUint(*this) &= y; }
+    template<unsigned short base2>
+    [[nodiscard]] MyUint operator|(const MyUint<base2>& y) const { return MyUint(*this) |= y; }
+    template<unsigned short base2>
+    [[nodiscard]] MyUint operator^(const MyUint<base2>& y) const { return MyUint(*this) ^= y; }
+
     //shift left
     MyUint& operator<<=(const uint32_t x) {
         int new_msb = msb - x;
-        std::vector<bool> z(new_msb, false);
+        new_msb < 0 ? new_msb = -new_msb : new_msb = new_msb;
+        std::vector<bool> z (new_msb, false);
         copy(uint.begin() + msb,uint.end(),back_inserter(z));
         z.resize(base, false);
         uint = z;
-        //verify msb
-        msb = 0;
-        for(;msb < base - 1 && !uint[msb];msb++);
+        verify_msb();
         return (*this);
     }
     //shift right
@@ -139,19 +158,34 @@ public:
         copy(uint.begin() + msb,uint.end(),back_inserter(z));
         z.resize(base, false);
         uint = z;
-        msb = 0;
-        for(;msb < base - 1 && !uint[msb];msb++);
+        verify_msb();
         return (*this);
     }
     [[nodiscard]] MyUint operator<<(const uint32_t x) const { return MyUint(*this) <<= x; }
     [[nodiscard]] MyUint operator>>(const uint32_t x) const { return MyUint(*this) >>= x; }
     //bool
     template<unsigned short base2>
-    bool operator==(const MyUint<base2>& y) const { return uint == y.uint; }
+    [[nodiscard]] bool operator==(const MyUint<base2>& y) const {
+        //if bases arent equal make sure to equalize them
+        int check = base - base2;
+        if(check != 0){
+            //if check is negative than base2 is larger hence resize this
+            if(check < 0){
+                MyUint<base2> temp (this->uint);
+                return temp.uint == y.uint;
+            }else{
+                MyUint<base> temp (y.uint);
+                return uint == temp.uint;
+            }
+
+        }else
+            //if they are equal
+            return uint == y.uint;
+    }
     template<unsigned short base2>
-    bool operator!=(const MyUint<base2>& y) const {  return uint != y.uint; }
+    [[nodiscard]] bool operator!=(const MyUint<base2>& y) const {  return !((*this )== y); }
     template<unsigned short base2>
-    bool operator<(const MyUint<base2>& y) const {
+    [[nodiscard]] bool operator<(const MyUint<base2>& y) const {
         if((*this) == y) return false;
         if ((base - msb) == (base2 - y.msb)){
             int i = msb, j = y.msb;
@@ -170,147 +204,61 @@ public:
             return (base - msb) < (base2 - y.msb);
     }
     template<unsigned short base2>
-    bool operator>(const MyUint<base2>& y) const { return y < (*this); }
+    [[nodiscard]] bool operator>(const MyUint<base2>& y) const { return y < (*this); }
     template<unsigned short base2>
-    bool operator<=(const MyUint<base2>& y) const { return (*this) < y || (*this) == y; }
+    [[nodiscard]] bool operator<=(const MyUint<base2>& y) const { return (*this) < y || (*this) == y; }
     template<unsigned short base2>
-    bool operator>=(const MyUint<base2>& y) const { return (*this) > y || (*this) == y; }
+    [[nodiscard]] bool operator>=(const MyUint<base2>& y) const { return (*this) > y || (*this) == y; }
     //ull
-    bool operator==(const unsigned long long x) const {
+    [[nodiscard]] bool operator==(const unsigned long long x) const {
         MyUint<base> y(x);
-        return uint == y.uint; }
-    bool operator!=(const unsigned long long x) const {
+        return (*this) == y;
+    }
+    [[nodiscard]] bool operator!=(const unsigned long long x) const {
         MyUint<base> y(x);
-        return uint != y.uint; }
-    bool operator<(const unsigned long long x) const {
+        return (*this) != y;
+    }
+    [[nodiscard]] bool operator<(const unsigned long long x) const {
         MyUint<base> y(x);
         return y > (*this);
     }
-    bool operator>(const unsigned long long x) const {
+    [[nodiscard]] bool operator>(const unsigned long long x) const {
         MyUint<base> y(x);
         return y < (*this);
     }
-    bool operator<=(const unsigned long long x) const {
+    [[nodiscard]] bool operator<=(const unsigned long long x) const {
         MyUint<base> y(x);
         return (*this) < y || (*this) == y; }
-    bool operator>=(const unsigned long long x) const {
+    [[nodiscard]] bool operator>=(const unsigned long long x) const {
         MyUint<base> y(x);
         return (*this) > y || (*this) == y;
     }
 
     template<unsigned short base2>
     MyUint& operator+=(const MyUint<base2>& y) {
-        if(y.msb == base2) return *(this);
-        bool carry = false;
-        std::vector<bool> n {};
-        std::vector<bool> bits {false,false,false};
-
-        int i = base - 1, j = base2 - 1;
-        for(;i >= 0 || j >= y.msb - 1;i--,j--){
-            bits[0] = uint[i];
-            if(j >= 0)
-                bits[1] = y.uint[j];
-            else
-                bits[1] = false;
-            bits[2] = carry;
-            switch (bits_on(bits)) {
-                case 0:
-                    n.insert(n.begin(), false);
-                    carry = false;
-                    break;
-                case 1:
-                    n.insert(n.begin(), true);
-                    carry = false;
-                    break;
-                case 2:
-                    n.insert(n.begin(), false);
-                    carry = true;
-                    break;
-                case 3:
-                    n.insert(n.begin(), true);
-                    carry = true;
-                    break;
-            }
+        MyUint<base> keep = (MyUint(*this) &  y) << 1;
+        MyUint<base> res =  MyUint(*this) ^ y;
+        if (keep == 0){
+            *(this) = res;
+            return *(this);
         }
-        //keep only base bits from n
-        //this way we avoid overflow errors (the value is lost but we dont program wont crash)
-        short sizeDifference = n.size() - base;
-        if(sizeDifference > 0)
-            n.erase(n.begin() + (sizeDifference - 1));
-        //update msb
-        int new_msb = 0;
-        //when MyUint is 0 this doesnt function properly so msb is limited to base
-        for(;new_msb < base && !n[new_msb];new_msb++);
-        //adjust it for base
-        new_msb += base - n.size();
-        //add empty bits
-        std::vector<bool> x {};
-        x.resize(base - n.size() ,false);
-        //add binary to empty bits
-        for(auto bit: n)
-            x.emplace_back(bit);
-        //return
-        this->msb = new_msb;
-        this->uint = x;
+        keep += res;
+        *(this) = keep;
         return *(this);
     }
 
     template<unsigned short base2>
     MyUint& operator-=(const MyUint<base2>& y) {
-        if(y > (*this)) throw std::exception();
-
-        bool carry = false;
-        std::vector<bool> n {};
-        int i = base - 1, j = base2 - 1;
-        //msb his larger
-        bool safety;
-        for(;i >= 0 && i >= msb - 1;i--,j--){
-            if(j >= 0)
-                safety = y.uint[j];
-            else
-                safety = false;
-
-            if(!uint[i]) {
-                if ((!safety && !carry) || (safety && carry)){
-                    n.insert(n.begin(), false);
-                    carry = false;
-                }else if(safety && !carry || !safety && carry){
-                    n.insert(n.begin(), true);
-                    carry = true;
-                }
-            }else{
-                if(safety && carry){
-                    n.insert(n.begin(), true);
-                    carry = true;
-                }else if(!safety && !carry){
-                    n.insert(n.begin(), true);
-                    carry = false;
-                }else{
-                    n.insert(n.begin(), false);
-                    carry = false;
-                }
-            }
+        // undefined negative behaviour
+        if ((*this) < y) throw std::exception();
+        MyUint<base> y2(y.uint);
+        MyUint<base> borrow;
+        while (y2 != 0){
+            borrow = (~*(this)) & y2;
+            (*this) ^= y2;
+            borrow <<= 1;
+            y2 = borrow;
         }
-        //keep only base bits from n
-        //this way we avoid overflow errors (the value is lost but we dont program wont crash)
-        short sizeDifference = n.size() - base;
-        if(sizeDifference > 0)
-            n.erase(n.begin() + (sizeDifference - 1));
-        //update msb
-        int new_msb = 0;
-        //when MyUint is 0 this doesnt function properly so msb is limited to base
-        for(;new_msb < base && !n[new_msb];new_msb++);
-        //adjust it for base
-        new_msb += base - n.size();
-        //add empty bits
-        std::vector<bool> x {};
-        x.resize(base - n.size() ,false);
-        //add binary to empty bits
-        for(auto bit: n)
-            x.emplace_back(bit);
-        //return
-        this->msb = new_msb;
-        this->uint = x;
         return *(this);
     }
 
@@ -377,7 +325,7 @@ public:
         return *(this);
     }
 
-    template<short base2>
+    template<unsigned short base2>
     [[nodiscard]] MyUint operator+(const MyUint<base2>& y) const { return MyUint(*this) += y; }
     template<unsigned short base2>
     [[nodiscard]] MyUint operator-(const MyUint<base2>& y) const { return MyUint(*this) -= y; }
@@ -451,6 +399,33 @@ public:
     MyUint& operator%=(const unsigned long long x) {
         MyUint<base> y(x);
         *this %= y;
+        return (*this);
+    }
+    [[nodiscard]] MyUint operator&(const unsigned long long x) const {
+        MyUint<base> y(x);
+        return MyUint(*this) &= y;
+    }
+    MyUint& operator&=(const unsigned long long x) {
+        MyUint<base> y(x);
+        *this &= y;
+        return (*this);
+    }
+    [[nodiscard]] MyUint operator|(const unsigned long long x) const {
+        MyUint<base> y(x);
+        return MyUint(*this) |= y;
+    }
+    MyUint& operator|=(const unsigned long long x) {
+        MyUint<base> y(x);
+        *this |= y;
+        return (*this);
+    }
+    [[nodiscard]] MyUint operator^(const unsigned long long x) const {
+        MyUint<base> y(x);
+        return MyUint(*this) ^= y;
+    }
+    MyUint& operator^=(const unsigned long long x) {
+        MyUint<base> y(x);
+        *this ^= y;
         return (*this);
     }
 
