@@ -7,23 +7,37 @@
 #include <string>
 #include <stdexcept>
 
+/**
+ * MyUint Class is a bit representative number class that is able to represent any unsigned integer number
+ * from 0 to 2^(2^15) - 1
+ * @tparam size the number of bits allocated for the number. size must be a power of 2 (e.g 2,4,8,16 etc)
+ */
 
-#ifndef BIGINT_MYUINT_H
-#define BIGINT_MYUINT_H
-#endif //BIGINT_MYUINT_H
-//max 2048 anyways
-template<unsigned short base>
+template<unsigned short size>
 class MyUint {
 private:
+    /**
+     * Verify MSB using this O(n) function
+     */
    void verify_msb(){
-        //verify msb
         msb = 0;
-        for(;msb < base - 1 && !uint[msb];msb++);
+        //msb is incremented in each iteration until the first on bit is found
+        for(; msb < size - 1 && !bits[msb]; msb++);
     }
 public:
+    //msb will hold the position of the msb of the binary number here
     unsigned short msb = 0;
-    //since I would have been storing ether a 0/1 using the special implementation of vector<bool> is better
-    std::vector<bool> uint;
+    //special implementation of vector<bool> allows storage of 1 bit making space representation easier to understand
+    //any binary number is represented this way:
+    //1010 -> bits[0] = true, bits[2] = false, bits[2] = true, bits[3] = false
+    //the msb in this case would be 0
+    std::vector<bool> bits;
+
+    /**
+     * returns whether a number n is a power of 2 or not
+     * @param n the number being tested
+     * @return bool
+     */
     constexpr bool isPowerOf2(unsigned short n){
         if(n>0){
             while(n%2 == 0)
@@ -35,425 +49,679 @@ public:
 
         return false;
     }
-    explicit MyUint() : uint(std::vector<bool>({false})), msb(0) {};
-    explicit MyUint(std::vector<bool> vint){
-        std::vector<bool> x(base - vint.size(), false);
-        copy(vint.begin(),vint.end(),back_inserter(x));
-        uint = x;
-        verify_msb();
-    };
-    // Copy Constructor
-    MyUint(const MyUint & myUint) : uint(myUint.uint), msb(myUint.msb) {};
-    // Move Constructor
-    MyUint(MyUint && myUint)  noexcept : uint{ myUint.uint }, msb{ myUint.msb } {};
 
-    MyUint& operator= (const MyUint & myUint) = default ;
+    /**
+     * Standard constructor allocates size number of bits for the number
+     */
+    explicit MyUint() : bits(std::vector<bool>(size, false)), msb(size) {};
+
+    /**
+     * constructor to change the vector<bool> of the number
+     * @param bits the new vector<bool>
+     */
+    explicit MyUint(std::vector<bool> bits){
+        //create a new vector<bool> x and allocate size - bits.size() off bits
+        //These extra bits are the difference in the sizes
+        std::vector<bool> x(size - bits.size(), false);
+        //copy bits into x
+        copy(bits.begin(),bits.end(),back_inserter(x));
+        //change bits
+        this->bits = x;
+        //since the object hasnt been created yet I copied the verify msb function here
+        msb = 0;
+        //msb is incremented in each iteration until the first on bit is found
+        for(; msb < size - 1 && !bits[msb]; msb++);
+    };
+
+    // Copy Constructor
+    MyUint(const MyUint & myUint) : bits(myUint.bits), msb(myUint.msb) {};
+    // Move Constructor
+    MyUint(MyUint && myUint)  noexcept : bits{myUint.bits }, msb{myUint.msb } {};
+    /*
+     * Since by having a move constructor my copy constructor was being implicitly deleted I had to explicitly
+     * override the = functions to accommodate for the constructors
+     */
+    MyUint& operator= (const MyUint & ) = default ;
     MyUint& operator= ( MyUint&& ) noexcept = default ;
 
+    /*
+     * unsigned long long constructor that converts any ULL into a MyUint
+     */
     explicit MyUint(unsigned long long x) {
-        if(!isPowerOf2(base)) throw std::bad_alloc();
-
-        if(x > (unsigned long long)pow(2, base)) throw std::exception();
-        //resize vector to base
-        uint.resize(base, false);
+        //The size must be a power of 2
+        if(!isPowerOf2(size)) throw std::bad_alloc();
+        //x also has to be smaller than 2^size
+        if(x > (unsigned long long)pow(2, size)) throw std::exception();
+        //resize vector to size
+        bits.resize(size, false);
         //convert number to binary
-        int i = base - 1;
+        int i = size - 1;
         for(; x > 0; i--){
-            uint[i] = x % 2;
+            bits[i] = x % 2;
             x = x/2;
         }
         msb = i + 1;
-
     }
-    /*
-     * Assigner
+
+    /** *****************
+     * Assignment overloading
+     *
+     * Takes ULL y and returns a new MyUint representing y
+     * @param y an unsigned long long number
+     * @return MyUint representation of y
      */
-    MyUint& operator=(unsigned long long y) {
-        *this =  MyUint<base> (y);
+    [[nodiscard]] MyUint& operator=(unsigned long long y) {
+        *this =  MyUint<size> (y);
         return (*this);
     }
-//    MyUint& operator=(const MyUint<base>& y) {
-//        uint =  y.uint;
-//        msb =  y.msb;
-//        return *this;
-//    }
-    /*
+
+    /* ******************
      * Bitwise operations
      */
-    //Not
-    [[nodiscard]]MyUint operator~() {
-        MyUint<base> copy(*this);
-        for(auto bit: copy.uint){
+    /**
+     * Bitwise not for MyUint
+     * @return a copy of the binary not of this
+     */
+    [[nodiscard]] MyUint operator~() {
+        // copy this
+        MyUint<size> copy(*this);
+        // flip each bit in the copy
+        for(auto bit: copy.bits){
             bit = !bit;
         }
+        // verify the msb in in copy
         copy.verify_msb();
+        // return copy
         return copy;
     }
-    //And
-    template<unsigned short base2>
-    MyUint& operator&=(const MyUint<base2>& y) {
-        int i = base - 1, j = base2 - 1;
+
+    /**
+     * Bitwise and assignment for MyUint
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns this & y
+     */
+    template<unsigned short size2>
+    MyUint& operator&=(const MyUint<size2>& y) {
+        int i = size - 1, j = size2 - 1;
         //Only loop until i msb or j msb
         // as anything after the msb of either of these is guaranteed to be 0
         for(; i >= msb && j >= y.msb; i--,j--)
-            uint[i] = uint[i] & y.uint[j];
+            // perform & on the bits
+            bits[i] = bits[i] & y.bits[j];
 
-        //if i isnt 0 make sure everything from
+        //if i isn't 0 make sure everything from msb to 0 is false
         while(i >= msb)
-            uint[i--] = false;
+            bits[i--] = false;
 
         verify_msb();
         return (*this);
     }
-    //Or
-    template<unsigned short base2>
-    MyUint& operator|=(const MyUint<base2>& y) {
-        int i = base - 1, j = base2 - 1;
+
+    /**
+     * Bitwise or assignment for MyUin
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns this | y
+     */
+    template<unsigned short size2>
+    MyUint& operator|=(const MyUint<size2>& y) {
+        int i = size - 1, j = size2 - 1;
         //Only loop until i msb or j msb
         // as anything after the msb of either of these is stays the same
         for(; i >= msb && j >= y.msb; i--,j--)
-            uint[i] = uint[i] | y.uint[j];
-
-        verify_msb();
+            bits[i] = bits[i] | y.bits[j];
+        // no need to verify msb as or doesnt change the msb
         return (*this);
     }
 
-    //XOR
-    template<unsigned short base2>
-    MyUint& operator^=(const MyUint<base2>& y) {
-        int i = base - 1, j = base2 - 1;
-        //still loop till msbs
+    /**
+     * Bitwise xor assignment for MyUin
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns this ^ y
+     */
+    template<unsigned short size2>
+    MyUint& operator^=(const MyUint<size2>& y) {
+        int i = size - 1, j = size2 - 1;
+        //Only loop until i msb or j msb
         for(; i >= msb && j >= y.msb; i--,j--)
-            uint[i] = uint[i] ^ y.uint[j];
-        // if i isnt 0 then xor the remaining bits with 0
+            bits[i] = bits[i] ^ y.bits[j];
+        // if i isn't 0 then xor the remaining bits with 0
         for(;i >= msb;i--)
-            uint[i] = uint[i] ^ (false);
+            bits[i] = bits[i] ^ (false);
 
         verify_msb();
         return (*this);
     }
+    // binary operator overloading for &, |, ^
+    // To avoid code duplication the respective bitwise assignment operator is used on a copy of this and y
+    template<unsigned short size2>
+    [[nodiscard]] MyUint operator& (const MyUint<size2>& y) const{ return MyUint(*this) &= y; }
+    template<unsigned short size2>
+    [[nodiscard]] MyUint operator|(const MyUint<size2>& y) const { return MyUint(*this) |= y; }
+    template<unsigned short size2>
+    [[nodiscard]] MyUint operator^(const MyUint<size2>& y) const { return MyUint(*this) ^= y; }
 
-    template<unsigned short base2>
-    [[nodiscard]] MyUint operator& (const MyUint<base2>& y) const{ return MyUint(*this) &= y; }
-    template<unsigned short base2>
-    [[nodiscard]] MyUint operator|(const MyUint<base2>& y) const { return MyUint(*this) |= y; }
-    template<unsigned short base2>
-    [[nodiscard]] MyUint operator^(const MyUint<base2>& y) const { return MyUint(*this) ^= y; }
-
-    //shift left
-    MyUint& operator<<=(const uint32_t x) {
-        int new_msb = msb - x;
-        new_msb < 0 ? new_msb = -new_msb : new_msb = new_msb;
+    /**
+     * left shift this MyUint by y
+     * @param x the number of bits the number will be shifted to the left
+     * @return this number shifter by y bits to the left
+     */
+    MyUint& operator<<=(const unsigned short y) {
+        //calculate position of the new msb
+        int new_msb = msb - y;
+        //msb cannot be negative, if the new msb is less than 0 than restart from size
+        new_msb < 0 ? new_msb = size + new_msb : new_msb = new_msb;
+        //create a new binary number z with new_msb number of off bits
         std::vector<bool> z (new_msb, false);
-        copy(uint.begin() + msb,uint.end(),back_inserter(z));
-        z.resize(base, false);
-        uint = z;
+        //copy the significant bits from bits and add them to the back of z
+        copy(bits.begin() + msb, bits.end(), back_inserter(z));
+        //fill any remaining bits with off bits
+        z.resize(size, false);
+        //assign z to bits
+        bits = z;
         verify_msb();
         return (*this);
     }
-    //shift right
-    MyUint& operator>>=(const uint32_t x) {
-        int new_msb = msb + x;
-        std::vector<bool> z(new_msb, false);
-        copy(uint.begin() + msb,uint.end(),back_inserter(z));
-        z.resize(base, false);
-        uint = z;
-        verify_msb();
-        return (*this);
-    }
-    [[nodiscard]] MyUint operator<<(const uint32_t x) const { return MyUint(*this) <<= x; }
-    [[nodiscard]] MyUint operator>>(const uint32_t x) const { return MyUint(*this) >>= x; }
-    //bool
-    template<unsigned short base2>
-    [[nodiscard]] bool operator==(const MyUint<base2>& y) const {
-        //if bases arent equal make sure to equalize them
-        int check = base - base2;
-        if(check != 0){
-            //if check is negative than base2 is larger hence resize this
-            if(check < 0){
-                MyUint<base2> temp (this->uint);
-                return temp.uint == y.uint;
-            }else{
-                MyUint<base> temp (y.uint);
-                return uint == temp.uint;
-            }
 
+    /**
+     * right shift this MyUint by y
+     * @param x the number of bits the number will be shifted to the right
+     * @return this number shifter by y bits to the right
+     */
+    MyUint& operator>>=(const unsigned short y) {
+        //calculate position of the new msb
+        int new_msb = msb + y;
+        //create a new binary number z with new_msb number of off bits
+        std::vector<bool> z(new_msb, false);
+        //copy the significant bits from bits and add them to the back of z
+        copy(bits.begin() + msb, bits.end(), back_inserter(z));
+        //fill any remaining bits with off bits
+        z.resize(size, false);
+        //assign z to bits
+        bits = z;
+        verify_msb();
+        return (*this);
+    }
+
+    // binary shift operators
+    // To avoid code duplication the respective shift assignment operator is used on a copy of this and y
+    [[nodiscard]] MyUint operator<<(const unsigned short y) const { return MyUint(*this) <<= y; }
+    [[nodiscard]] MyUint operator>>(const unsigned short y) const { return MyUint(*this) >>= y; }
+
+    /* ******************
+     * Boolean/Relational  operations
+     */
+    /**
+     * Equal To operator between this and y
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns whether this is equal to y
+     */
+    template<unsigned short size2>
+    [[nodiscard]] bool operator==(const MyUint<size2>& y) const {
+        //if bases aren't equal make sure to equalize them
+        int check = size - size2;
+        if(check != 0){
+            //if check is negative than size2 is larger hence resize this
+            if(check < 0){
+                //resize this in temp
+                MyUint<size2> temp (this->bits);
+                //compare the vectors
+                return temp.bits == y.bits;
+            }else{
+                //resize y in temp
+                MyUint<size> temp (y.bits);
+                //compare the vectors
+                return bits == temp.bits;
+            }
         }else
             //if they are equal
-            return uint == y.uint;
+            //compare the vectors
+            return bits == y.bits;
     }
-    template<unsigned short base2>
-    [[nodiscard]] bool operator!=(const MyUint<base2>& y) const {  return !((*this )== y); }
-    template<unsigned short base2>
-    [[nodiscard]] bool operator<(const MyUint<base2>& y) const {
+
+    /**
+     * Not Equal To operator between this and y
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns whether this is not equal to y
+     */
+    template<unsigned short size2>
+    [[nodiscard]] bool operator!=(const MyUint<size2>& y) const {  return !((*this )== y); }
+
+    /**
+     * Less than  operator between this and y
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns whether this is less than y
+     */
+    template<unsigned short size2>
+    [[nodiscard]] bool operator<(const MyUint<size2>& y) const {
+        //if the two numbers are equal return false
         if((*this) == y) return false;
-        if ((base - msb) == (base2 - y.msb)){
+        //if the raw binaries are the same size in bits then msb is equal to y.msb (in value)
+        if ((size - msb) == (size2 - y.msb)){
             int i = msb, j = y.msb;
-            for(;i < base && j < base2;i++,j++){
-                if(uint[i] && y.uint[j] || !uint[i] && !y.uint[j])
+            //start going through the binaries
+            for(; i < size && j < size2; i++,j++){
+                //if both binary bits are on or off
+                if(bits[i] && y.bits[j] || !bits[i] && !y.bits[j])
+                    //continue the loop, this doesn't effect the relation
                     continue;
 
-                if(!uint[i] && y.uint[j])
+                //if the current bit in y is on while the bit in this is off
+                if(!bits[i] && y.bits[j])
+                    //y is larger than this (this is smaller than y)
                     return true;
 
-                if(uint[i] &&!y.uint[j])
+                //if the current bit in y is off while the bit in this is on
+                if(bits[i] && !y.bits[j])
+                    //this is larger than y (y is smaller than this)
                     return false;
             }
         }
+        //if not then one msb is larger than the other
         else
-            return (base - msb) < (base2 - y.msb);
+            // compare the raw location of the msb
+            return (size - msb) < (size2 - y.msb);
     }
-    template<unsigned short base2>
-    [[nodiscard]] bool operator>(const MyUint<base2>& y) const { return y < (*this); }
-    template<unsigned short base2>
-    [[nodiscard]] bool operator<=(const MyUint<base2>& y) const { return (*this) < y || (*this) == y; }
-    template<unsigned short base2>
-    [[nodiscard]] bool operator>=(const MyUint<base2>& y) const { return (*this) > y || (*this) == y; }
-    //ull
+    /**
+     * Greater than operator between this and y
+     * To avoid code repetition I switch the places of this and y and compare them using <
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns whether y is less than this
+     */
+    template<unsigned short size2>
+    [[nodiscard]] bool operator>(const MyUint<size2>& y) const { return y < (*this); }
+    template<unsigned short size2>
+
+    /**
+     * Less than or equal to operator between this and y
+     * Uses < and ==
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns whether this is less than or equal to y
+     */
+    [[nodiscard]] bool operator<=(const MyUint<size2>& y) const { return (*this) < y || (*this) == y; }
+
+    /**
+     * Greater than or equal to operator between this and y
+     * Uses > and ==
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns whether this is greater than or equal to y
+     */
+    template<unsigned short size2>
+    [[nodiscard]] bool operator>=(const MyUint<size2>& y) const { return (*this) > y || (*this) == y; }
+
+    /*
+     * Unsigned long long overloading
+     *
+     * In these functions a MyUint for the given unsigned long long x is created and compared to this as expected.
+     */
     [[nodiscard]] bool operator==(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return (*this) == y;
     }
     [[nodiscard]] bool operator!=(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return (*this) != y;
     }
     [[nodiscard]] bool operator<(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return y > (*this);
     }
     [[nodiscard]] bool operator>(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return y < (*this);
     }
     [[nodiscard]] bool operator<=(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return (*this) < y || (*this) == y; }
     [[nodiscard]] bool operator>=(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return (*this) > y || (*this) == y;
     }
+    /* ******************
+     * Arithmetic operations
+     */
 
-    template<unsigned short base2>
-    MyUint& operator+=(const MyUint<base2>& y) {
-        MyUint<base> keep = (MyUint(*this) &  y) << 1;
-        MyUint<base> res =  MyUint(*this) ^ y;
+    /**
+     * Addition Assignment operator
+     * Add y to this
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns this after y has been added
+     */
+    template<unsigned short size2>
+    MyUint& operator+=(const MyUint<size2>& y) {
+        //define keep as  MyUint copy of this
+        //perform bitwise and with y and then bit shift keep to the left
+        MyUint<size> keep = (MyUint(*this) & y) << 1;
+        //define res as a copy of this
+        //perform bitwise xor with y
+        MyUint<size> res = MyUint(*this) ^ y;
+        //if keep is 0
         if (keep == 0){
+            //set this to res and return
             *(this) = res;
             return *(this);
         }
+        //add res to keep
         keep += res;
+        //set this to res and return
         *(this) = keep;
         return *(this);
     }
 
-    template<unsigned short base2>
-    MyUint& operator-=(const MyUint<base2>& y) {
-        // undefined negative behaviour
-        if ((*this) < y) throw std::exception();
-        MyUint<base> y2(y.uint);
-        MyUint<base> borrow;
+    /**
+     * Subtraction Assignment operator
+     * Subtract y to this
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns this after y has been subtracted
+     */
+    template<unsigned short size2>
+    MyUint& operator-=(const MyUint<size2>& y) {
+        //This algorithm gets weird undefined behaviour when y is greater than this, so I set this to 0 and return
+        if ((*this) < y) {
+            MyUint<size> z(0);
+            *(this) = z;
+            return *(this);
+        }
+        //copy y into y2. This has to be done with the vector<bool> constructor due to the difference in sizes
+        MyUint<size> y2(y.bits);
+        //define borrow as an empty number
+        MyUint<size> borrow;
+        //loop while y2 is not 0
         while (y2 != 0){
+            //set borrow to not this
+            //perform bitwise and on borrow
             borrow = (~*(this)) & y2;
+            //xor this with y2
             (*this) ^= y2;
+            //bitshift borrow to the left by one
             borrow <<= 1;
+            //set y2 as borrow
             y2 = borrow;
         }
         return *(this);
     }
 
     //https://www.sciencedirect.com/topics/engineering/binary-multiplication
-    template<unsigned short base2>
-    MyUint& operator*=(const MyUint<base2>& y) {
-        MyUint<base2> temp_number;
-        MyUint<base> result(0);
-        for(int i = base2 - 1;i >= 0 && i >= y.msb - 1; i--){
-            if(y.uint[i]){
-                temp_number = MyUint<base2>(this->uint);
-                temp_number <<= (base2 - i - 1);
+    /**
+     * Multiplication Assignment operator
+     * Multiply y to this
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns this after y has been multiplied to it
+     */
+    template<unsigned short size2>
+    MyUint& operator*=(const MyUint<size2>& y) {
+        //define temp_number and result
+        MyUint<size2> temp_number;
+        MyUint<size> result(0);
+        //start from the lsb, and loop until either this has been read fully or msb of y has been reached
+        for(int i = size2 - 1;i >= 0 && i >= y.msb - 1; i--){
+            //if the current bit in y is on
+            if(y.bits[i]){
+                //copy bits into temp_number via the vector<bool> constructor
+                temp_number = MyUint<size2>(this->bits);
+                //shift temp number by size2 - i - 1 to the left
+                temp_number <<= (size2 - i - 1);
+                //add temp_number to result
                 result += temp_number;
             }
         }
-        this->uint = result.uint;
-        this->msb = result.msb;
-        return (*this);
-    }
-
-    template<unsigned short base2>
-    MyUint& operator/=(const MyUint<base2>& y) {
-        if(y == 0) throw std::runtime_error("Math error: Attempted to divide by Zero\n");
-        // Quotient extracted so far
-        MyUint<base> quotient(0);
-        // intermediate remainder
-        MyUint<base> rem(0);
-        for(int i = 0; i < base; i++){
-            rem <<= 1;
-            rem.uint[base-1] = uint[i];
-            for(;rem.msb < base - 1 && !rem.uint[rem.msb];rem.msb++);
-            if(rem >= y){
-                rem -= y;
-                quotient.uint[i] = true;
-                for(;quotient.msb < base - 1 && !quotient.uint[quotient.msb];quotient.msb++);
-            }
-        }
-        msb = 0;
-        for(;msb < base - 1 && !quotient.uint[msb];msb++);
-        this->uint = quotient.uint;
+        //set this equal to result
+        *(this) = result;
         return *(this);
     }
 
-    template<unsigned short base2>
-    MyUint& operator%=(const MyUint<base2>& y) {
+    /**
+     * Division Assignment operator
+     * Divide y to this
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns this after y has been divided to it
+     */
+    template<unsigned short size2>
+    MyUint& operator/=(const MyUint<size2>& y) {
+        // Do not allow divisions by 0
         if(y == 0) throw std::runtime_error("Math error: Attempted to divide by Zero\n");
         // Quotient extracted so far
-        MyUint<base> quotient(0);
+        MyUint<size> quotient(0);
         // intermediate remainder
-        MyUint<base> rem(0);
-        for(int i = 0; i < base; i++){
+        MyUint<size> rem(0);
+        //loop though all the bits
+        for(int i = 0; i < size; i++){
+            //bitshift rem to the left
             rem <<= 1;
-            rem.uint[base-1] = uint[i];
-            for(;rem.msb < base - 1 && !rem.uint[rem.msb];rem.msb++);
+            //set the lsb in remainder to the current bit
+            rem.bits[size - 1] = bits[i];
+            //if rem is more than or equal to y
             if(rem >= y){
+                //subtract y from rem
                 rem -= y;
-                quotient.uint[i] = true;
-                for(;quotient.msb < base - 1 && !quotient.uint[quotient.msb];quotient.msb++);
+                //turn current bit in quotient on
+                quotient.bits[i] = true;
             }
         }
-        msb = 0;
-        for(;msb < base - 1 && !rem.uint[msb];msb++);
-        this->uint = rem.uint;
+        //verify msb of quotient and return it
+        quotient.verify_msb();
+        *(this) = quotient;
+        return *(this);
+    }
+    /**
+     * Modulo  Assignment operator
+     * Divide y to this and
+     * @tparam size2 number of bits of y
+     * @param y second MyUint number
+     * @return returns the remainder after y has been divided to this
+     */
+    template<unsigned short size2>
+    MyUint& operator%=(const MyUint<size2>& y) {
+        // Do not allow divisions by 0
+        if(y == 0) throw std::runtime_error("Math error: Attempted to divide by Zero\n");
+        // intermediate remainder
+        MyUint<size> rem(0);
+        //loop though all the bits
+        for(int i = 0; i < size; i++){
+            //bitshift rem to the left
+            rem <<= 1;
+            //set the lsb in remainder to the current bit
+            rem.bits[size - 1] = bits[i];
+            //if rem is more than or equal to y
+            if(rem >= y){
+                //subtract y from rem
+                rem -= y;
+            }
+        }
+        //verify msb of remainder and return it
+        rem.verify_msb();
+        *(this) = rem;
         return *(this);
     }
 
-    template<unsigned short base2>
-    [[nodiscard]] MyUint operator+(const MyUint<base2>& y) const { return MyUint(*this) += y; }
-    template<unsigned short base2>
-    [[nodiscard]] MyUint operator-(const MyUint<base2>& y) const { return MyUint(*this) -= y; }
-    template<unsigned short base2>
-    [[nodiscard]] MyUint operator*(const MyUint<base2>& y) const { return MyUint(*this) *= y; }
-    template<unsigned short base2>
-    [[nodiscard]] MyUint operator/(const MyUint<base2>& y) const { return MyUint(*this) /= y; }
-    template<unsigned short base2>
-    [[nodiscard]] MyUint operator%(const MyUint<base2>& y) const { return MyUint(*this) %= y; }
+    // binary arithmetic operators
+    // To avoid code duplication the respective arithmetic assignment operator is used on a copy of this and y
+    template<unsigned short size2>
+    [[nodiscard]] MyUint operator+(const MyUint<size2>& y) const{ return MyUint(*this) += y; }
+    template<unsigned short size2>
+    [[nodiscard]] MyUint operator-(const MyUint<size2>& y) const { return MyUint(*this) -= y; }
+    template<unsigned short size2>
+    [[nodiscard]] MyUint operator*(const MyUint<size2>& y) const { return MyUint(*this) *= y; }
+    template<unsigned short size2>
+    [[nodiscard]] MyUint operator/(const MyUint<size2>& y) const { return MyUint(*this) /= y; }
+    template<unsigned short size2>
+    [[nodiscard]] MyUint operator%(const MyUint<size2>& y) const { return MyUint(*this) %= y; }
 
+    /**
+     * Postfix increment of a MyUint number
+     * @return the number before increment
+     */
     MyUint operator++(int){
-        MyUint<base> old(*this);
+        MyUint<size> old(*this);
         (*this) += 1;
         return old;
     }
+
+    /**
+    * Prefix increment of a MyUint number
+    * @return the number after increment
+    */
     MyUint operator++() {
         (*this) += 1;
         return (*this);
     }
 
+    /**
+     * Postfix decrement of a MyUint number
+     * @return the number before decrement
+     */
     MyUint operator--(int){
-        MyUint<base> old(*this);
+        MyUint<size> old(*this);
         (*this) -= 1;
         return old;
     }
+
+    /**
+    * Prefix decrement of a MyUint number
+    * @return the number after decrement
+    */
     MyUint operator--() {
         (*this) -= 1;
         return (*this);
     }
 
+    /*
+     * Unsigned long long overloading
+     *
+     * In these functions a MyUint for the given unsigned long long x is created and is operated on as expected by the
+     * function
+     */
     [[nodiscard]] MyUint operator+(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return MyUint(*this) += y;
     }
     MyUint& operator+=(const unsigned long long x) {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         *this += y;
         return (*this);
     }
     [[nodiscard]] MyUint operator-(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return MyUint(*this) -= y;
     }
     MyUint& operator-=(const unsigned long long x) {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         *this -= y;
         return (*this);
     }
     [[nodiscard]] MyUint operator*(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return MyUint(*this) *= y;
     }
     MyUint& operator*=(const unsigned long long x) {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         *this *= y;
         return (*this);
     }
     [[nodiscard]] MyUint operator/(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return MyUint(*this) /= y;
     }
     MyUint& operator/=(const unsigned long long x) {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         *this /= y;
         return (*this);
     }
     [[nodiscard]] MyUint operator%(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return MyUint(*this) %= y;
     }
     MyUint& operator%=(const unsigned long long x) {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         *this %= y;
         return (*this);
     }
     [[nodiscard]] MyUint operator&(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return MyUint(*this) &= y;
     }
     MyUint& operator&=(const unsigned long long x) {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         *this &= y;
         return (*this);
     }
     [[nodiscard]] MyUint operator|(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return MyUint(*this) |= y;
     }
     MyUint& operator|=(const unsigned long long x) {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         *this |= y;
         return (*this);
     }
     [[nodiscard]] MyUint operator^(const unsigned long long x) const {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         return MyUint(*this) ^= y;
     }
     MyUint& operator^=(const unsigned long long x) {
-        MyUint<base> y(x);
+        MyUint<size> y(x);
         *this ^= y;
         return (*this);
     }
 
+    /**
+     * Converts MyUint to either an int or long
+     * @tparam type type to which the user wants MyUint to be converted to
+     * @return type representing the value MyUint was representing or -1 if converstion is unsupported
+     */
     template<typename type>
     [[nodiscard]] type convertTo(){
+        //get size of type
         size_t s = sizeof(type);
-        if(base - msb > sizeof(type) * 8) throw std::bad_cast();
+        //if MyUint stores a number larger than what type can store throw an exception
+        if(size - msb > sizeof(type) * 8) throw std::bad_cast();
+        //convert MyUint to a binary string
         std::string binary = to_binary_string();
+        //define y
         type y;
+        //check size of type
         switch (s) {
             case 4:
+                //type is integer
+                //convert binary to int and return
                 y = stoi(binary, nullptr, 2);
                 break;
             case 8:
+                //type is long
+                //convert binary to long and return
                 y = stol(binary, nullptr, 2);
                 break;
             default:
+                // -1 error
                 y = -1;
         }
         return y;
     }
 
-
+    /**
+     * Convert MyUint to a binary string
+     * @return Binary string representation of MyUint
+     */
     [[nodiscard]] std::string to_binary_string() const {
+        //define ret as an empty string
         std::string ret;
-        for(auto bit: uint)
+        //Loop through each bit
+        for(auto bit: bits)
+            //if bit is on append 1 else append 0
             bit ? ret += "1" : ret += "0";
-
+        //if ret is empty return "0", else return the built string
         return ret.empty() ? "0" : ret;
     }
 
@@ -463,12 +731,11 @@ public:
         std::string result{};
 
         // The conversion will also work for other  number bases
-        // For base > 10 you need to adapt the creation of the digit at the bottom
+        // For size > 10 you need to adapt the creation of the digit at the bottom
         constexpr unsigned int numberBase{ 10 };
 
-        // So, we will perfrom an integer division by 10, until the number is 0
+        // So, we will perform an integer division by 10, until the number is 0
         do {
-
             // The remainder is the digit that we are interested in
             unsigned int remainder{};
             // Temporary result of integer division
@@ -492,7 +759,7 @@ public:
                     dividedNumberAsString += "0";
                 }
             }
-            // Now "dividedNumberAsString" as string is the result of the devision by e.g. 10 in binary form
+            // Now "dividedNumberAsString" as string is the result of the dicvision by e.g. 10 in binary form
             binary = dividedNumberAsString;
             // The remainder is the number that we are interested in
             result.insert(0, 1, '0' + remainder);
