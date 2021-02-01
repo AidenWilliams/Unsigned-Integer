@@ -53,13 +53,22 @@ public:
     /**
      * Standard constructor allocates size number of bits for the number
      */
-    explicit MyUint() : bits(std::vector<bool>(size, false)), msb(size) {};
+    explicit MyUint() : bits(std::vector<bool>(size, false)), msb(size) {
+        //The size must be a power of 2
+        if(!isPowerOf2(size)) throw std::bad_alloc();
+        //size also has to be smaller than 2048
+        if(size > 2048) throw std::exception();
+    };
 
     /**
      * constructor to change the vector<bool> of the number
      * @param bits the new vector<bool>
      */
     explicit MyUint(std::vector<bool> bits){
+        //The size must be a power of 2
+        if(!isPowerOf2(size)) throw std::bad_alloc();
+        //size also has to be smaller than 2048
+        if(size > 2048) throw std::exception();
         //create a new vector<bool> x and allocate size - bits.size() off bits
         //These extra bits are the difference in the sizes
         std::vector<bool> x(size - bits.size(), false);
@@ -90,8 +99,8 @@ public:
     explicit MyUint(unsigned long long x) {
         //The size must be a power of 2
         if(!isPowerOf2(size)) throw std::bad_alloc();
-        //x also has to be smaller than 2^size
-        if(x > (unsigned long long)pow(2, size)) throw std::exception();
+        //size also has to be smaller than 2048
+        if(size > 2048) throw std::exception();
         //resize vector to size
         bits.resize(size, false);
         //convert number to binary
@@ -185,10 +194,10 @@ public:
     MyUint& operator^=(const MyUint<size2>& y) {
         int i = size - 1, j = size2 - 1;
         //Only loop until i msb or j msb
-        for(; i >= msb && j >= y.msb; i--,j--)
+        for(; i >= 0 && j >= y.msb; i--,j--)
             bits[i] = bits[i] ^ y.bits[j];
         // if i isn't 0 then xor the remaining bits with 0
-        for(;i >= msb;i--)
+        for(;i >= 0;i--)
             bits[i] = bits[i] ^ (false);
 
         verify_msb();
